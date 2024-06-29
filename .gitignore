@@ -1,0 +1,10 @@
+ray_based/worker_logs/*
+graph/worker_logs/*
+
+ray_based/results/*
+graph/results/*
+
+ray_based/analysis/*
+graph/analysis/*
+
+*.sif

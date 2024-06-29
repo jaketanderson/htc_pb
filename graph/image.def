@@ -1,0 +1,20 @@
+Bootstrap: docker
+From: opensciencegrid/osgvo-ubuntu-20.04:latest
+
+%environment
+    export DELPHIEXEC="/Delphicpp_v8.5.0_Linux/Release/delphicpp_release"
+%files
+    /ospool/ap21/data/jakea/conda_envs/pb.tar.gz pb.tar.gz
+%post
+    apt update && apt install -y libboost-all-dev
+
+    # Delphi
+    wget http://compbio.clemson.edu/media/releasefiles/Delphicpp_v8.5.0_Linux.tar.gz
+    tar -xvzf Delphicpp_v8.5.0_Linux.tar.gz --no-same-owner; cd Delphicpp_v8.5.0_Linux/Release; make all; cd -
+    export DELPHIEXEC="/Delphicpp_v8.5.0_Linux/Release/delphicpp_release"
+    chmod +x $DELPHIEXEC
+    
+    chmod a+r pb.tar.gz
+    chmod a+rw /
+
+    echo "All good"
