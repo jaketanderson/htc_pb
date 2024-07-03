@@ -76,4 +76,3 @@ if __name__ == "__main__":
             pickle.dump(system, f)
 
     print(f"Total count: {total_count} systems")
-

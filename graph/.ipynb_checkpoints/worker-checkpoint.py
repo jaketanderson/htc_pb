@@ -74,7 +74,7 @@ def run_pb(
     pdb_strings = []
 
     atom_names = list(
-        permutations(list(string.ascii_lowercase) + list(string.ascii_uppercase), 2)
+        permutations(list(string.ascii_uppercase), 2)
     )
     for i in range(0, len(positions)):
         atomname = "".join(atom_names[i])
@@ -85,7 +85,7 @@ def run_pb(
         # else:
         charge = charges[i]
         radius = radii[i]
-        charge_strings.append(f"  {atomname.ljust(4)}          {charge:.4f}\n")
+        charge_strings.append(f"  {atomname.ljust(4)}          {float(charge):.4f}\n")
         radius_strings.append(f"{atomname.ljust(4)}       {float(radius):.4f}\n")
         pdb_strings.append(
             f"{'ATOM'.ljust(7)}{str(i+1).rjust(4)}  {atomname.ljust(3)}             "
@@ -93,6 +93,8 @@ def run_pb(
             f"                     {'Ar'.rjust(2)}\n"
         )
 
+    if not os.path.exists("working_data"):
+        os.makedirs("working_data")
     with open(f"working_data/custom.{id}.crg", "w") as f:
         f.writelines(charge_strings)
     with open(f"working_data/custom.{id}.siz", "w") as f:
@@ -168,6 +170,25 @@ def run_pb(
             if counter >= 4:
                 break
 
+    energies["grid_pots_at_atoms"] = {}
+    energies["coul_pots_at_atoms"] = {}
+    with open(f"working_data/potentials.{id}.frc", "r") as f:
+        should_read = False
+        for line in f.readlines():
+            if (
+                "ATOM DESCRIPTOR         ATOM COORDINATES (X,Y,Z)    GRID PT. COUL. POT"
+                in line
+            ):
+                should_read = True
+                continue
+            if should_read and (not "total energy =" in line):
+                energies["grid_pots_at_atoms"][
+                    atom_names.index(tuple(line[0:2]))
+                ] = float(line[50:60])
+                energies["coul_pots_at_atoms"][
+                    atom_names.index(tuple(line[0:2]))
+                ] = float(line[60:70])
+
     os.remove(f"working_data/params.{id}.prm")
     os.remove(f"working_data/custom.{id}.crg")
     os.remove(f"working_data/custom.{id}.siz")
@@ -198,6 +219,7 @@ class System:
         if charges is not None:
             self.set_charges(charges)
 
+        self.graph = None
         self.id = "".join(random.choices(string.ascii_letters + string.digits, k=16))
 
     def set_positions(self, positions: ListOfListsOfVals, overwrite=False) -> None:
@@ -387,7 +409,48 @@ class System:
         alpha = 1 / (integral * volume / len(points_in_sphere))
         return alpha
 
-    # Written in full by ChatGPT-4o 6/8/2024
+    def calculate_interatomic_potential(self, atom_index1: int, atom_index2: int):
+        """
+        Use PB calculations to get the potential on atom 1 due to atom 2's charge.
+        The calculation is: potential at 1 due to 2 = potential at 1 with 2 unchanged - potential at 1 with 2 neutral.
+        """
+        self.check()
+        scale = self.get_scale()
+
+        # Get potential at 1 normally
+        energies = run_pb(
+            self.positions,
+            self.radii,
+            self.charges,
+            focus_atom_index=atom_index1,
+            scale=scale,
+            indi=1,
+            exdi=80,
+        )
+        first_term = convert_energy_to_kJ_per_mol(
+            energies["grid_pots_at_atoms"][atom_index1]
+        )
+
+        # Get potential at 1 with 2 set to neutral
+        temp_charges = [
+            charge if i != atom_index2 else 0 for (i, charge) in enumerate(self.charges)
+        ]
+        energies = run_pb(
+            self.positions,
+            self.radii,
+            temp_charges,
+            focus_atom_index=atom_index1,
+            scale=scale,
+            indi=1,
+            exdi=80,
+        )
+        second_term = convert_energy_to_kJ_per_mol(
+            energies["grid_pots_at_atoms"][atom_index1]
+        )
+
+        return first_term - second_term
+
+    # Fully rewritten for optimization by ChatGPT-4o 6/8/2024
     def calculate_born_radius_with_pure_VDW_integral(
         self, atom_index: int, scale=None, chunk_size=1000000
     ) -> float:
@@ -449,161 +512,40 @@ class System:
         alpha = 1 / (integral * volume / num_points_in_sphere)
         return alpha
 
-    def get_points_on_atom_surface(
-        self, atom_index: int, desired_point_density=1000
-    ) -> (NDArray, int):
+    def create_networkx_graph(self, delete_existing=False):
         """
-        Return a tuple of: numpy array of xyz coordiantes of points uniformly randomly distributed
-        on the surface of the sphere of atom with index `atom_index` and the number of points.
+        Create a complete graph in networkx where nodes are atoms and edges
+        are interatomic distances. Nodes can be given properties using
+        methods like `self.assign_radii_to_graph()`.
         """
+        assert (
+            self.graph is None
+        ) or delete_existing, "A graph already exists for this `System`. To rewrite it, use `delete_existing=True`."
+        graph = nx.Graph()
 
-        r = self.radii[atom_index]
-        num_points = int(desired_point_density * 4 * np.pi * r**2)
-        rng = np.random.default_rng(seed=1997)
-
-        theta = np.arccos(2 * rng.uniform(low=0, high=1, size=num_points) - 1)
-        phi = rng.uniform(low=0, high=2 * np.pi, size=num_points)
-        xs = r * np.sin(theta) * np.cos(phi)
-        ys = r * np.sin(theta) * np.sin(phi)
-        zs = r * np.cos(theta)
-
-        return (
-            np.array([[xs[i], ys[i], zs[i]] for i in range(0, num_points)]),
-            np.array([[theta[i], phi[i]] for i in range(0, num_points)]),
-            num_points,
-        )
-
-    # CHEAPER BUT WRONG. HAVEN'T FIXED!! DANGER!!
-    # def get_fraction_surface_points_shadowed(
-    #     self, atom_index: int, desired_point_density=1000
-    # ) -> float:
-    #     surface_points, num_points = self.get_points_on_atom_surface(
-    #         atom_index, desired_point_density
-    #     )
-    #     center_point = np.array(self.positions[atom_index])
-
-    #     # Get vectors from center of atom of interest to the points on its surface
-    #     surface_vecs = surface_points - center_point
-    #     # surface_mags = np.linalg.norm(surface_vecs, axis=1)
-    #     surface_mags = np.array(
-    #         [float(self.radii[atom_index]) for _ in range(num_points)]
-    #     )
-
-    #     # Get vectors from center of atom of interest to the centers of peripheral atoms
-    #     peripheral_atom_vecs = np.array(self.positions) - center_point
-    #     peripheral_atom_mags = np.linalg.norm(peripheral_atom_vecs, axis=1)
-
-    #     num_points_intersecting = 0
-    #     for i, surface_vec in enumerate(surface_vecs):
-    #         for j, peripheral_atom_vec in enumerate(peripheral_atom_vecs):
-    #             if j == atom_index:
-    #                 continue
-    #             dot_product = np.dot(surface_vec, peripheral_atom_vec)
-    #             theta = np.arccos(
-    #                 dot_product / (surface_mags[i] * peripheral_atom_mags[j])
-    #             )
-    #             if theta <= np.pi/2 and abs(peripheral_atom_mags[j] * np.sin(theta)) <= self.radii[j]:
-    #                 num_points_intersecting += 1
-    #                 break
-
-    #     return num_points_intersecting / num_points
-
-    def get_fraction_surface_points_shadowed(
-        self,
-        atom_index: int,
-        surface_point_data: tuple[NDArray, int],
-    ) -> float:
-        surface_points, surface_points_spherical, num_points = surface_point_data
-
-        center_point = np.array(self.positions[atom_index])
-
-        # Get vectors from center of atom of interest to the points on its surface
-        surface_vecs = surface_points - center_point
-        # surface_mags = np.linalg.norm(surface_vecs, axis=1)
-        surface_mags = np.array(
-            [float(self.radii[atom_index]) for _ in range(num_points)]
-        )
-
-        # Get vectors from center of atom of interest to the centers of peripheral atoms
-        peripheral_atom_vecs = np.array(self.positions) - center_point
-        peripheral_atom_mags = np.linalg.norm(peripheral_atom_vecs, axis=1)
-
-        delta = 0.01
-        intersection_array = []
-        for i, surface_vec in enumerate(surface_vecs):
-            intersection_lengths = [0 for _ in peripheral_atom_vecs]
-            current_pos = surface_vec
-            while np.linalg.norm(current_pos - center_point) <= 9:
-                current_pos = current_pos + (surface_vec * delta)
-                for j, peripheral_atom_vec in enumerate(peripheral_atom_vecs):
-                    if j == atom_index:
-                        continue
-                    if (
-                        np.linalg.norm(current_pos - peripheral_atom_vec)
-                        < self.radii[j]
-                    ):
-                        # Calculate length of intersection path inside peripheral atom
-                        # "peripheral internal vector" means the vector going from point of
-                        # intersection of peripheral atom to that atom's center
-
-                        peripheral_internal_vec = peripheral_atom_vec - current_pos
-
-                        phi = np.arccos(
-                            np.dot(surface_vec, peripheral_internal_vec)
-                            / (surface_mags[i] * self.radii[j])
-                        )
-                        theta = 2 * phi - np.pi
-                        length_of_intersection_path = np.sqrt(
-                            2 * self.radii[j] ** 2
-                            - 2 * np.cos(theta) * self.radii[j] ** 2
-                        )
-                        intersection_lengths[j] += length_of_intersection_path
-                        # We already counted length due to this peripheral atom; teleport to the opposite edge
-                        # of the atom to continue the ray tracing and count other lengths
-                        current_pos = (
-                            current_pos
-                            + (length_of_intersection_path + 2 * delta) * surface_vec
-                        )
-
-            intersection_array.append(max(intersection_lengths))
-
-        assert len(intersection_array) == num_points
-        num_points_intersecting = sum([1 if v != 0 else 0 for v in intersection_array])
-        return (num_points_intersecting / num_points, intersection_array)
-
-    def get_surface_points_KL(
-        self,
-        atom_index: int,
-        surface_point_data: tuple[NDArray, int],
-        intersection_array: list[bool],
-    ) -> float:
-        intersection_array = np.array(intersection_array)
-        surface_points, surface_points_spherical, num_points = surface_point_data
-        rng = np.random.default_rng(seed=1997)
-        KLs = []
-        for _ in range(20):
-            uniform_random_reference = rng.permutation(intersection_array)
-            KL = np.sum(
-                (intersection_array + 1)
-                * np.log((intersection_array + 1) / (uniform_random_reference + 1))
+        for i, position in enumerate(system.positions):
+            graph.add_node(i)
+        for a, b in combinations(range(0, len(system.positions)), r=2):
+            dist = np.linalg.norm(
+                np.array(system.positions[a]) - np.array(system.positions[b])
             )
-            KLs.append(KL)
-        return KLs
+            graph.add_edge(a, b, weight=dist)
 
+        self.graph = graph
+        return
 
-def get_surface_point_info(
-    system: System, atom_index: int, desired_point_density=1000
-) -> tuple:
-    surface_point_data = system.get_points_on_atom_surface(
-        atom_index, desired_point_density
-    )
-    fraction_shadowed, intersection_array = system.get_fraction_surface_points_shadowed(
-        atom_index, surface_point_data
-    )
-    KLs = system.get_surface_points_KL(
-        atom_index, surface_point_data, intersection_array
-    )
-    return surface_point_data, intersection_array, fraction_shadowed, KLs
+    def assign_radii_to_graph(self):
+        """
+        Give each node in `self.graph` the property of its cavity radius.
+        """
+        assert (
+            self.graph is not None
+        ), "The `System` must have a graph before calling `self.assign_radii_to_graph()`."
+        radii_dict = {}
+        for i, node in enumerate(self.graph.nodes):
+            radii_dict[i] = {"radius": self.radii[i]}
+        nx.set_node_attributes(self.graph, radii_dict)
+        return
 
 
 def get_born_radius(system: System, atom_index: int) -> tuple:
@@ -628,9 +570,7 @@ if __name__ == "__main__":
     # system.set_charges(charges)
     # system.set_positions(positions)
 
-    result_born_radius = get_born_radius(system, 0)
-    # result_born_radius = (None, None)
-    result_surface = get_surface_point_info(system, 0, 1000)
+    result_potential = system.calculate_interatomic_potential(0, 1)
     result_dict = {
         "system": system,
         "condor_process": int(sys.argv[1]),

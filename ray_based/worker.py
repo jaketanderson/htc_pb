@@ -387,7 +387,7 @@ class System:
         alpha = 1 / (integral * volume / len(points_in_sphere))
         return alpha
 
-    # Written in full by ChatGPT-4o 6/8/2024
+    # Fully rewritten for optimization by ChatGPT-4o 6/8/2024
     def calculate_born_radius_with_pure_VDW_integral(
         self, atom_index: int, scale=None, chunk_size=1000000
     ) -> float:
