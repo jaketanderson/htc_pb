@@ -5,7 +5,7 @@ memory usage out of all finished jobs.
 
 import re
 
-n_jobs = 190
+n_jobs = 3800
 
 mem_vals = []
 for i in range(n_jobs):
