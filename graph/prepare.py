@@ -1,5 +1,5 @@
 """
-ray_based/prepare.py
+graph/prepare.py
 
 This file generates `N` systems each with `n` atoms.
 Each system has one central atom with a randomly-populated
@@ -18,7 +18,7 @@ from worker import System
 rng = np.random.default_rng(seed=1997)
 
 max_atom_count = 20
-n_systems_per_atom_count = 10
+n_systems_per_atom_count = 200
 total_count = n_systems_per_atom_count * (max_atom_count - 1)
 
 def generate_random_values(ranges, size):
@@ -39,7 +39,7 @@ if __name__ == "__main__":
         print(f"Generating {n_systems_per_atom_count} {atom_count}-atom systems...")
         radii_ranges = [(0.8, 2.0)] * atom_count
         charge_ranges = [(-2, 2)] * atom_count
-        distance_ranges = [(0, 0)] + [(max(r[1] for r in radii_ranges), 10)] * (atom_count - 1)
+        distance_ranges = [(0, 0)] + [(max(r[1] for r in radii_ranges), 8)] * (atom_count - 1)
         theta_ranges = [(0, 0)] * 2 + [(0, np.pi)] * (atom_count - 2)
         phi_ranges = [(0, 2 * np.pi)] * atom_count
 
