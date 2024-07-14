@@ -27,9 +27,12 @@ def born(energy: float) -> float:  # Assumes given in kJ/mol
     return radius
 
 
-def convert_energy_to_kJ_per_mol(val: float) -> float:  # Converts from kT to kJ/mol
+def convert_energy_to_kJ_per_mol(val: float) -> float:  # Converts from kT/e to kJ/mol
     return N_A * val * k * 298 / 1000
 
+def convert_potential_to_V(val: float) -> float:  # Converts from kT/e to V
+    conversion_factor = (k * 298) / elementary_charge # This is how many volts are in one kT/e
+    return val * conversion_factor
 
 def get_distance(
     position1: ListOfVals, position2: ListOfVals
@@ -428,7 +431,7 @@ class System:
             indi=1,
             exdi=80,
         )
-        first_term = convert_energy_to_kJ_per_mol(
+        first_term = convert_potential_to_V(
             energies["grid_pots_at_atoms"][atom_index1]
         )
 
@@ -445,7 +448,7 @@ class System:
             indi=1,
             exdi=80,
         )
-        second_term = convert_energy_to_kJ_per_mol(
+        second_term = convert_potential_to_V(
             energies["grid_pots_at_atoms"][atom_index1]
         )
 

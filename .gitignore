@@ -9,3 +9,5 @@ graph/analysis/*
 
 *.sif
 *.pickle
+
+*/__pycache__/*

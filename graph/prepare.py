@@ -18,7 +18,7 @@ from worker import System
 rng = np.random.default_rng(seed=1997)
 
 max_atom_count = 20
-n_systems_per_atom_count = 200
+n_systems_per_atom_count = 250
 total_count = n_systems_per_atom_count * (max_atom_count - 1)
 
 

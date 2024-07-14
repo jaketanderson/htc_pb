@@ -3,13 +3,11 @@
 executable = worker.sh
 arguments = $(Process)
 
-transfer_input_files = worker.py, worker.sh, params.prm, worker_logs/$(Process)/system_input.pickle
+transfer_input_files = osdf:///ospool/ap21/data/jakea/containers/pb_container_v8.sif, worker.py, worker.sh, params.prm, worker_logs/$(Process)/system_input.pickle
 
 should_transfer_files   = YES
 when_to_transfer_output = ON_EXIT
 transfer_output_remaps = "result.pickle = results/$(Process)/result.pickle"
-#transfer_output_remaps = "result.pickle = /home/jakea/software/delphi_container/results/$(Process)/result.pickle"
-#transfer_output_remaps = "working_data/output.log = /home/jakea/delphi_container/worker_logs/$(Process)/delphi_output.log"
 transfer_output_files = result.pickle
 
 log           = worker_logs/$(Process)/log.txt
@@ -28,4 +26,4 @@ max_retries = 5
 max_materialize = 10000
 max_idle = 5000
 
-queue 3800
+queue 4750
