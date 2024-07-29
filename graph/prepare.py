@@ -15,7 +15,8 @@ from tqdm import tqdm
 
 from worker import System
 
-rng = np.random.default_rng(seed=1997)
+# rng = np.random.default_rng(seed=1997) # Use this for first batch of 20x250
+rng = np.random.default_rng(seed=1998) # Use this for second batch...
 
 max_atom_count = 20
 n_systems_per_atom_count = 250
@@ -41,7 +42,7 @@ if __name__ == "__main__":
     for atom_count in range(2, max_atom_count + 1):
         print(f"Generating {n_systems_per_atom_count} {atom_count}-atom systems...")
         radii_ranges = [(0.8, 2.0)] * atom_count
-        charge_ranges = [(-2, 2)] * atom_count
+        charge_ranges = [(-2, 2)] + [(0, 0)] * (atom_count - 1)
         distance_ranges = [(0, 0)] + [(max(r[1] for r in radii_ranges), 8)] * (
             atom_count - 1
         )
@@ -81,6 +82,10 @@ if __name__ == "__main__":
     for i, system in enumerate(inputs):
         os.makedirs(f"results/{i}", exist_ok=True)
         os.makedirs(f"worker_logs/{i}", exist_ok=True)
+        with open(f"worker_logs/{i}/system_input.pickle", "wb") as f:
+            pickle.dump(system, f)
+
+    print(f"Total count: {total_count} systems")
         with open(f"worker_logs/{i}/system_input.pickle", "wb") as f:
             pickle.dump(system, f)
 

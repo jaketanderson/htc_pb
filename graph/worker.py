@@ -319,18 +319,18 @@ class System:
             else:
                 temp_charges.append(0)
 
-        vacuum_energies = run_pb(
-            positions=self.positions,
-            radii=self.radii,
-            charges=temp_charges,
-            focus_atom_index=atom_index,
-            cpus=1,
-            scale=scale,
-            indi=1,
-            exdi=1,
-        )
-        vacuum_energy = convert_energy_to_kJ_per_mol(vacuum_energies["total_grid"])
-        # print(f"vacuum_energy: {vacuum_energy} kJ/mol")
+      #  vacuum_energies = run_pb(
+      #      positions=self.positions,
+      #      radii=self.radii,
+      #      charges=temp_charges,
+      #      focus_atom_index=atom_index,
+      #      cpus=1,
+      #      scale=scale,
+      #      indi=1,
+      #      exdi=1,
+      #  )
+      #  vacuum_energy = convert_energy_to_kJ_per_mol(vacuum_energies["total_grid"])
+      #  print(f"vacuum_energy: {vacuum_energy} kJ/mol")
 
         solvated_energies = run_pb(
             positions=self.positions,
@@ -345,7 +345,7 @@ class System:
         solvated_energy = convert_energy_to_kJ_per_mol(solvated_energies["total_grid"])
         # print(f"solvated_energy: {solvated_energy} kJ/mol")
 
-        solvation_free_energy = solvated_energy - vacuum_energy
+        solvation_free_energy = solvated_energy
         # print(f"solvation_free_energy: {solvation_free_energy} kJ/mol")
 
         return born(solvation_free_energy)
