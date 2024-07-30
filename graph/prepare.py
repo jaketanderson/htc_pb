@@ -15,27 +15,25 @@ from tqdm import tqdm
 
 from worker import System
 
-# rng = np.random.default_rng(seed=1997) # Use this for first batch of 20x250
-rng = np.random.default_rng(seed=1998) # Use this for second batch...
+rng = np.random.default_rng(seed=1997) # Use this for first batch of 20x500
+# rng = np.random.default_rng(seed=1998) # Use this for second batch...
 
 max_atom_count = 20
-n_systems_per_atom_count = 250
+n_systems_per_atom_count = 500
 total_count = n_systems_per_atom_count * (max_atom_count - 1)
 
 
 def generate_random_values(ranges, size):
     return np.array([rng.uniform(r[0], r[1], size=size) for r in ranges])
 
-
 def check_overlap(xs, ys, zs, rs):
     indices = np.arange(len(xs))
-    for i, j in combinations(indices, 2):
+    for (i, j) in combinations(indices, 2):
         v1 = np.array([xs[i], ys[i], zs[i]])
         v2 = np.array([xs[j], ys[j], zs[j]])
         if np.linalg.norm(v1 - v2) < (rs[i] + rs[j]):
             return True
     return False
-
 
 if __name__ == "__main__":
     inputs = []
@@ -86,7 +84,4 @@ if __name__ == "__main__":
             pickle.dump(system, f)
 
     print(f"Total count: {total_count} systems")
-        with open(f"worker_logs/{i}/system_input.pickle", "wb") as f:
-            pickle.dump(system, f)
 
-    print(f"Total count: {total_count} systems")
