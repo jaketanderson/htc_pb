@@ -1,5 +1,6 @@
 +SingularityImage = "osdf:///ospool/ap21/data/jakea/containers/pb_container_v8.sif"
 
+environment = "OMP_NUM_THREADS=1;MKL_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1;NUMEXPR_NUM_THREADS=1"
 executable = worker.sh
 arguments = $(Process)
 
@@ -21,9 +22,9 @@ request_memory = 28GB
 request_disk   = 16GB
 
 periodic_release = True
-max_retries = 5
+max_retries = 30
 
 max_materialize = 10000
 max_idle = 5000
 
-queue 4750
+queue 12587

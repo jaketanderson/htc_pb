@@ -30,9 +30,13 @@ def born(energy: float) -> float:  # Assumes given in kJ/mol
 def convert_energy_to_kJ_per_mol(val: float) -> float:  # Converts from kT/e to kJ/mol
     return N_A * val * k * 298 / 1000
 
+
 def convert_potential_to_V(val: float) -> float:  # Converts from kT/e to V
-    conversion_factor = (k * 298) / elementary_charge # This is how many volts are in one kT/e
+    conversion_factor = (
+        k * 298
+    ) / elementary_charge  # This is how many volts are in one kT/e
     return val * conversion_factor
+
 
 def get_distance(
     position1: ListOfVals, position2: ListOfVals
@@ -76,9 +80,7 @@ def run_pb(
     radius_strings = ["atom__res_radius_\n"]
     pdb_strings = []
 
-    atom_names = list(
-        permutations(list(string.ascii_uppercase), 2)
-    )
+    atom_names = list(permutations(list(string.ascii_uppercase), 2))
     for i in range(0, len(positions)):
         atomname = "".join(atom_names[i])
         pos = positions[i]
@@ -319,18 +321,18 @@ class System:
             else:
                 temp_charges.append(0)
 
-      #  vacuum_energies = run_pb(
-      #      positions=self.positions,
-      #      radii=self.radii,
-      #      charges=temp_charges,
-      #      focus_atom_index=atom_index,
-      #      cpus=1,
-      #      scale=scale,
-      #      indi=1,
-      #      exdi=1,
-      #  )
-      #  vacuum_energy = convert_energy_to_kJ_per_mol(vacuum_energies["total_grid"])
-      #  print(f"vacuum_energy: {vacuum_energy} kJ/mol")
+        vacuum_energies = run_pb(
+            positions=self.positions,
+            radii=self.radii,
+            charges=temp_charges,
+            focus_atom_index=atom_index,
+            cpus=1,
+            scale=scale,
+            indi=1,
+            exdi=1,
+        )
+        vacuum_energy = convert_energy_to_kJ_per_mol(vacuum_energies["total_grid"])
+        print(f"vacuum_energy: {vacuum_energy} kJ/mol")
 
         solvated_energies = run_pb(
             positions=self.positions,
@@ -345,7 +347,7 @@ class System:
         solvated_energy = convert_energy_to_kJ_per_mol(solvated_energies["total_grid"])
         # print(f"solvated_energy: {solvated_energy} kJ/mol")
 
-        solvation_free_energy = solvated_energy
+        solvation_free_energy = solvated_energy - vacuum_energy
         # print(f"solvation_free_energy: {solvation_free_energy} kJ/mol")
 
         return born(solvation_free_energy)
@@ -414,53 +416,39 @@ class System:
 
     def calculate_interatomic_potential(self, atom_indices: tuple[int]):
         """
-        Use PB calculations to get the potential on atom 1 due to atom 2's charge.
-        The calculation is: potential at 1 due to 2 = potential at 1 with 2 unchanged - potential at 1 with 2 neutral.
+        Use PB calculations to get the potential on atom 2 due to atom 1's charge.
         """
         self.check()
         scale = self.get_scale()
         atom_index1, atom_index2 = atom_indices
 
-        # Get potential at 1 normally
+        # Make sure that all atoms are neutral, excluding atom 1
+        # print(self.charges)
+        assert not np.any(self.charges[1:] != 0)
+
+        # Get potential at atom 2
         energies = run_pb(
             self.positions,
             self.radii,
             self.charges,
-            focus_atom_index=atom_index1,
+            focus_atom_index=atom_index1,  # Focus atom index isn't where we're getting the potential necessarily
             scale=scale,
             indi=1,
             exdi=80,
         )
-        first_term = convert_potential_to_V(
-            energies["grid_pots_at_atoms"][atom_index1]
+        interatomic_potential = convert_potential_to_V(
+            energies["grid_pots_at_atoms"][atom_index2]
         )
 
-        # Get potential at 1 with 2 set to neutral
-        temp_charges = [
-            charge if i != atom_index2 else 0 for (i, charge) in enumerate(self.charges)
-        ]
-        energies = run_pb(
-            self.positions,
-            self.radii,
-            temp_charges,
-            focus_atom_index=atom_index1,
-            scale=scale,
-            indi=1,
-            exdi=80,
-        )
-        second_term = convert_potential_to_V(
-            energies["grid_pots_at_atoms"][atom_index1]
-        )
-
-        return first_term - second_term
+        return interatomic_potential
 
     # Fully rewritten for optimization by ChatGPT-4o 6/8/2024
     def calculate_born_radius_with_pure_VDW_integral(
         self, atom_index: int, scale=None, chunk_size=1000000
     ) -> float:
         """
-        Take a cube containing all atoms. Then, for all gridpoints inside of the sphere circumscribed in the cube,
-        use those grid points to calculate an integral dependent on whether a gridpoint is inside an atom or in solvent.
+        Calculate the Born radius using pure VDW integral. This is an optimized version
+        of the original function to improve speed and memory efficiency.
         """
         self.check()
         if not scale:
@@ -469,52 +457,221 @@ class System:
         center = np.array(self.positions[atom_index])
 
         # Get the diameter of the sphere in which to integrate
-        d = np.max(np.linalg.norm(np.array(self.positions) - center, axis=1)) + 1 * max(
+        D = np.max(np.linalg.norm(np.array(self.positions) - center, axis=1)) + max(
             self.radii
         )
 
-        # Create ranges for gridpoints that are larger than the sphere
-        X_range = np.arange(center[0] - d, center[0] + d, 1 / scale)
-        Y_range = np.arange(center[1] - d, center[1] + d, 1 / scale)
-        Z_range = np.arange(center[2] - d, center[2] + d, 1 / scale)
+        # Create ranges for grid points
+        grid_range = np.arange(-D, D, 1 / scale)
+        grid_points = np.stack(
+            np.meshgrid(grid_range, grid_range, grid_range), -1
+        ).reshape(-1, 3)
+
+        # Pre-calculate radii squares for quick checks
+        radii_squared = np.array(self.radii) ** 2
 
         def chunk_generator():
-            chunk = []
-            for x in X_range:
-                for y in Y_range:
-                    for z in Z_range:
-                        point = np.array([x, y, z])
-                        distance = np.linalg.norm(point - center)
+            for start in range(0, grid_points.shape[0], chunk_size):
+                end = min(start + chunk_size, grid_points.shape[0])
+                chunk = grid_points[start:end]
+                distances = np.linalg.norm(chunk, axis=1)
 
-                        # Check if the gridpoint is outside the focus atom but inside the sphere
-                        if self.radii[atom_index] < distance < d:
-                            chunk.append((point, distance))
-                            if len(chunk) >= chunk_size:
-                                yield chunk
-                                chunk = []
-            if chunk:
-                yield chunk
+                # Mask for points within the spherical shell (excluding inside atom)
+                mask = (self.radii[atom_index] < distances) & (distances < D)
+                yield chunk[mask] + center, distances[mask]
 
         integral = 0.0
         num_points_in_sphere = 0
-        for chunk in chunk_generator():
-            points = np.array([item[0] for item in chunk])
+
+        for points, distances_from_center in chunk_generator():
             num_points_in_sphere += len(points)
-            distances = np.array([item[1] for item in chunk])
-            point_distances = np.linalg.norm(
-                points[:, None, :] - np.array(self.positions), axis=2
-            )
-            valid_points = np.all(point_distances > self.radii, axis=1)
-            integral += np.sum(1 / distances[valid_points] ** 4)
+
+            # Determine which points are in solvent
+            in_solvent_mask = np.ones(len(points), dtype=bool)
+
+            for i, position in enumerate(self.positions):
+                distance_to_position = np.linalg.norm(points - position, axis=1)
+                in_solvent_mask &= distance_to_position >= self.radii[i]
+
+            # Filter points that are in solvent
+            solvent_distances = distances_from_center[in_solvent_mask]
+
+            if len(solvent_distances) > 0:
+                integral += np.sum(1 / solvent_distances**4)
 
         integral /= 4 * np.pi
 
         # Calculate the volume of the sphere
-        volume = 4 / 3 * np.pi * d**3 - 4 / 3 * np.pi * self.radii[atom_index] ** 3
+        volume = 4 / 3 * np.pi * (D**3 - self.radii[atom_index] ** 3)
 
         # Calculate the integral by getting the average value and multiplying by the volume
         alpha = 1 / (integral * volume / num_points_in_sphere)
         return alpha
+
+    def calculate_born_radius_with_pure_VDW_integral_hemisphere(
+        self, atom_indices=(0, 1), scale=None, chunk_size=1000000
+    ) -> float:
+        """
+        Calculate the Born radius using pure VDW integral over a hemisphere.
+        This function is optimized for speed and memory efficiency.
+        """
+        self.check()
+        if not scale:
+            scale = self.get_scale()
+
+        atom1, atom2 = atom_indices
+        center = np.array(self.positions[atom1])
+        partner = np.array(self.positions[atom2])
+
+        # Get the diameter of the sphere in which to integrate
+        D = np.max(np.linalg.norm(np.array(self.positions) - center, axis=1)) + max(
+            self.radii
+        )
+
+        # Create ranges for grid points
+        grid_range = np.arange(-D, D, 1 / scale)
+        grid_points = np.stack(
+            np.meshgrid(grid_range, grid_range, grid_range), -1
+        ).reshape(-1, 3)
+
+        # Vector for hemisphere determination
+        partner_vector = partner - center
+        partner_distance = np.linalg.norm(partner_vector)
+        partner_unit_vector = partner_vector / partner_distance
+
+        # Pre-calculate radii squares for quick checks
+        radii_squared = np.array(self.radii) ** 2
+
+        def chunk_generator():
+            for start in range(0, grid_points.shape[0], chunk_size):
+                end = min(start + chunk_size, grid_points.shape[0])
+                chunk = grid_points[start:end]
+
+                distances = np.linalg.norm(chunk, axis=1)
+                direction_vectors = chunk / distances[:, np.newaxis]
+
+                # Mask for points within the spherical shell and in the desired hemisphere
+                hemisphere_mask = np.dot(direction_vectors, partner_unit_vector) >= 0
+                shell_mask = (self.radii[atom1] < distances) & (distances < D)
+
+                mask = hemisphere_mask & shell_mask
+                yield chunk[mask] + center, distances[mask]
+
+        integral = 0.0
+        num_points_in_hemisphere = 0
+
+        for points, distances_from_center in chunk_generator():
+            num_points_in_hemisphere += len(points)
+
+            # Determine which points are in solvent
+            in_solvent_mask = np.ones(len(points), dtype=bool)
+
+            for i, position in enumerate(self.positions):
+                distance_to_position = np.linalg.norm(points - position, axis=1)
+                in_solvent_mask &= distance_to_position >= self.radii[i]
+
+            # Filter points that are in solvent
+            solvent_distances = distances_from_center[in_solvent_mask]
+
+            if len(solvent_distances) > 0:
+                integral += np.sum(1 / solvent_distances**4)
+
+        integral /= 4 * np.pi
+
+        # Account for the other hemisphere... assume it's the same!
+        integral *= 2
+        num_points_in_sphere = 2 * num_points_in_hemisphere
+
+        # Calculate the volume of the sphere (not hemisphere, arbitrary factory of 2 difference here)
+        volume = 4 / 3 * np.pi * (D**3 - self.radii[atom1] ** 3)
+
+        # Calculate the integral by getting the average value and multiplying by the volume
+        alpha = 1 / (integral * volume / num_points_in_sphere)
+        return alpha[0]
+
+    def calculate_born_radius_with_pure_VDW_integral_by_octants(
+            self, atom_index: int, scale=None, chunk_size=1000000
+        ) -> list:
+        """
+        Calculate the Born radius using pure VDW integral, returning one radius for each octant.
+        This is an optimized version to improve speed and memory efficiency.
+        """
+        self.check()
+        if not scale:
+            scale = self.get_scale()
+    
+        center = np.array(self.positions[atom_index])
+    
+        # Get the diameter of the sphere in which to integrate
+        D = np.max(np.linalg.norm(np.array(self.positions) - center, axis=1)) + max(
+            self.radii
+        )
+    
+        # Create ranges for grid points
+        grid_range = np.arange(-D, D, 1 / scale)
+        grid_points = np.stack(
+            np.meshgrid(grid_range, grid_range, grid_range), -1
+        ).reshape(-1, 3)
+    
+        # Pre-calculate radii squares for quick checks
+        radii_squared = np.array(self.radii) ** 2
+    
+        # Initialize accumulators for each octant
+        integrals = np.zeros(8)
+        num_points_in_sphere = np.zeros(8)
+    
+        def chunk_generator():
+            for start in range(0, grid_points.shape[0], chunk_size):
+                end = min(start + chunk_size, grid_points.shape[0])
+                chunk = grid_points[start:end]
+                distances = np.linalg.norm(chunk, axis=1)
+    
+                # Mask for points within the spherical shell (excluding inside atom)
+                mask = (self.radii[atom_index] < distances) & (distances < D)
+                yield chunk[mask] + center, distances[mask]
+    
+        def get_octant_index(point):
+            """ Determine which octant a point belongs to based on its (x, y, z) coordinates. """
+            return (
+                (point[0] >= center[0]) << 2 |
+                (point[1] >= center[1]) << 1 |
+                (point[2] >= center[2])
+            )
+    
+        for points, distances_from_center in chunk_generator():
+            # Determine which points are in solvent
+            in_solvent_mask = np.ones(len(points), dtype=bool)
+    
+            for i, position in enumerate(self.positions):
+                distance_to_position = np.linalg.norm(points - position, axis=1)
+                in_solvent_mask &= distance_to_position >= self.radii[i]
+    
+            # Filter points that are in solvent
+            solvent_points = points[in_solvent_mask]
+            solvent_distances = distances_from_center[in_solvent_mask]
+    
+            if len(solvent_points) > 0:
+                # Compute integrals for each octant
+                for i, point in enumerate(solvent_points):
+                    octant_index = get_octant_index(point)
+                    integrals[octant_index] += 1 / solvent_distances[i]**4
+                    num_points_in_sphere[octant_index] += 1
+    
+        # Normalize integrals and calculate alpha for each octant
+        octant_alphas = []
+        for octant in range(8):
+            if num_points_in_sphere[octant] > 0:
+                integrals[octant] /= 4 * np.pi
+                # Calculate the volume of the sphere for the octant
+                volume = (4 / 3) * np.pi * (D**3 - self.radii[atom_index]**3)  # We're suggesting that the entire sphere is made up of eight clones of this octant, so we don't divide by 8 in the volume calculation
+                # Calculate alpha (Born radius) for the octant
+                alpha = 1 / (integrals[octant] * volume / num_points_in_sphere[octant])
+                octant_alphas.append(alpha[0])
+            else:
+                octant_alphas.append(float('inf'))  # Handle empty octants
+    
+        return octant_alphas
+
 
     def create_networkx_graph(self, delete_existing=False):
         """
@@ -574,15 +731,27 @@ if __name__ == "__main__":
     # system.set_charges(charges)
     # system.set_positions(positions)
 
-    interaction_indices = (0, 1)
-    result_potential = system.calculate_interatomic_potential(interaction_indices)
-    result_dict = {
-        "system": system,
-        "condor_process": int(sys.argv[1]),
-        "values": {
-            "interaction_potential": (interaction_indices, result_potential)
-        },
+    # interaction_indices = (0, 1)
+    # result_potential = system.calculate_interatomic_potential(interaction_indices)
+    # BR_pb = system.calculate_born_radius_with_pb(atom_index=0)
+    BR_pure_VDW = system.calculate_born_radius_with_pure_VDW_integral(atom_index=0)
+
+    # BR_pure_VDW_hemisphere = (
+    #     system.calculate_born_radius_with_pure_VDW_integral_hemisphere(
+    #         atom_indices=interaction_indices
+    #     )
+    # )
+    BR_pure_VDW_by_octants = (
+        system.calculate_born_radius_with_pure_VDW_integral_by_octants(atom_index=0)
+    )
+
+    system.values = {
+        # "interaction_potential": (interaction_indices, result_potential),
+        # "BR_pb": BR_pb,
+        "BR_pure_VDW": BR_pure_VDW,
+        "BR_pure_VDW_by_octants": BR_pure_VDW_by_octants,
     }
+
     with open("result.pickle", "wb+") as f:
-        pickle.dump(result_dict, f)
-    print(str(result_dict))
+        pickle.dump(system, f)
+    print(str(system.values))

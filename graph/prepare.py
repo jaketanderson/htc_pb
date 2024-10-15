@@ -9,22 +9,29 @@ environment surrounding it.
 import os
 import pickle
 from itertools import combinations
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 from tqdm import tqdm
 
 from worker import System
 
-rng = np.random.default_rng(seed=1997) # Use this for first batch of 20x500
-# rng = np.random.default_rng(seed=1998) # Use this for second batch...
+rng = np.random.default_rng(seed=1997)  # Use this for first batch of 20x500
 
-max_atom_count = 20
-n_systems_per_atom_count = 500
-total_count = n_systems_per_atom_count * (max_atom_count - 1)
+max_atom_count = 3
+n_systems_per_atom_count = {}
+
+for atom_count in range(2, max_atom_count + 1):
+    # f(x) = 3861.13*exp(-0.2173x)
+    # Chosen so that f(2)=2500 and f(20)=50
+    n_systems_per_atom_count[atom_count] = int(3861.13*np.exp(-0.2173*atom_count))
+
+total_count = sum(n_systems_per_atom_count.values())
 
 
-def generate_random_values(ranges, size):
+def generate_random_values(ranges, size, rng):
     return np.array([rng.uniform(r[0], r[1], size=size) for r in ranges])
+
 
 def check_overlap(xs, ys, zs, rs):
     indices = np.arange(len(xs))
@@ -35,53 +42,88 @@ def check_overlap(xs, ys, zs, rs):
             return True
     return False
 
-if __name__ == "__main__":
+
+def generate_systems(atom_count, n_systems, seed=None):
+    """
+    Generate a set of systems with a given atom count.
+    """
+    rng = np.random.default_rng(seed)  # Use a different RNG per task
+
     inputs = []
-    for atom_count in range(2, max_atom_count + 1):
-        print(f"Generating {n_systems_per_atom_count} {atom_count}-atom systems...")
-        radii_ranges = [(0.8, 2.0)] * atom_count
-        charge_ranges = [(-2, 2)] + [(0, 0)] * (atom_count - 1)
-        distance_ranges = [(0, 0)] + [(max(r[1] for r in radii_ranges), 8)] * (
-            atom_count - 1
-        )
-        theta_ranges = [(0, 0)] * 2 + [(0, np.pi)] * (atom_count - 2)
-        phi_ranges = [(0, 2 * np.pi)] * atom_count
+    radii_ranges = [(0.8, 2.0)] * atom_count
+    charge_ranges = [(-2, 2)] + [(0, 0)] * (atom_count - 1)
+    distance_ranges = [(0, 0)] + [(max(r[1] for r in radii_ranges), 8)] * (
+        atom_count - 1
+    )
+    theta_ranges = [(0, 0)] * 2 + [(0, np.pi)] * (atom_count - 2)
+    phi_ranges = [(0, 2 * np.pi)] * atom_count
 
-        attempts, successful_attempts = 0, 0
-        with tqdm(total=n_systems_per_atom_count, desc=f"{atom_count}-atom systems", unit="system") as pbar:
-            while successful_attempts < n_systems_per_atom_count:
-                attempts += 1
+    attempts, successful_attempts = 0, 0
 
-                rs = generate_random_values(radii_ranges, 1)
-                charges = generate_random_values(charge_ranges, 1)
-                ds = generate_random_values(distance_ranges, 1)
-                thetas = generate_random_values(theta_ranges, 1)
-                phis = generate_random_values(phi_ranges, 1)
+    while successful_attempts < n_systems:
+        attempts += 1
 
-                xs = ds * np.sin(thetas) * np.cos(phis)
-                ys = ds * np.sin(thetas) * np.sin(phis)
-                zs = ds * np.cos(thetas)
+        rs = generate_random_values(radii_ranges, 1, rng)
+        charges = generate_random_values(charge_ranges, 1, rng)
+        ds = generate_random_values(distance_ranges, 1, rng)
+        thetas = generate_random_values(theta_ranges, 1, rng)
+        phis = generate_random_values(phi_ranges, 1, rng)
 
-                if check_overlap(xs, ys, zs, rs):
-                    continue
+        xs = ds * np.sin(thetas) * np.cos(phis)
+        ys = ds * np.sin(thetas) * np.sin(phis)
+        zs = ds * np.cos(thetas)
 
-                system = System()
-                system.set_radii(rs)
-                system.set_charges(charges)
-                system.set_positions(np.column_stack((xs, ys, zs)).tolist())
-                inputs.append(system)
-                successful_attempts += 1
-                pbar.update(1)
+        if np.isclose(charges[0], 0.0, atol=5e-2) or check_overlap(xs, ys, zs, rs):
+            continue
 
-        print(
-            f"It took {attempts} attempts to create {n_systems_per_atom_count} systems.\n"
-        )
+        system = System()
+        system.set_radii(rs)
+        system.set_charges(charges)
+        system.set_positions(np.column_stack((xs, ys, zs)))
+        inputs.append(system)
+        successful_attempts += 1
 
+    return inputs, attempts
+
+
+def save_systems(inputs, base_index):
+    """
+    Save generated systems to files.
+    """
     for i, system in enumerate(inputs):
-        os.makedirs(f"results/{i}", exist_ok=True)
-        os.makedirs(f"worker_logs/{i}", exist_ok=True)
-        with open(f"worker_logs/{i}/system_input.pickle", "wb") as f:
+        index = base_index + i
+        os.makedirs(f"results/{index}", exist_ok=True)
+        os.makedirs(f"worker_logs/{index}", exist_ok=True)
+        with open(f"worker_logs/{index}/system_input.pickle", "wb") as f:
             pickle.dump(system, f)
 
-    print(f"Total count: {total_count} systems")
 
+if __name__ == "__main__":
+    # Pre-generate unique seeds for each atom count
+    seeds = {atom_count: 1997 + atom_count for atom_count in range(2, max_atom_count + 1)}
+
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = []
+        base_index = 0
+        for atom_count in range(2, max_atom_count + 1):
+            print(f"Generating {n_systems_per_atom_count[atom_count]} {atom_count}-atom systems...")
+            seed = seeds[atom_count]  # Use pre-generated seed
+            futures.append(
+                executor.submit(
+                    generate_systems,
+                    atom_count,
+                    n_systems_per_atom_count[atom_count],
+                    seed=seed,
+                )
+            )
+
+        for future, atom_count in zip(as_completed(futures), range(2, max_atom_count + 1)):
+            inputs, attempts = future.result()
+            save_systems(inputs, base_index)
+            base_index += len(inputs)
+            print(
+                f"Completed {atom_count}-atom systems. "
+                f"Total attempts: {attempts}.\n"
+            )
+
+    print(f"Total count: {total_count} systems")
