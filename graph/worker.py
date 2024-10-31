@@ -1,5 +1,8 @@
 import json
 import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
 import pickle
 import random
 import string
@@ -284,7 +287,7 @@ class System:
         Return the DelPhi `scale` parameter that should be used. Higher values make for
         more accurate but more time/memory hungry calculations. Scales cubically!
         """
-
+        
         if self.radii is None:
             raise ValueError(
                 "At least one radius must be defined to use self.get_scale()"
@@ -590,8 +593,8 @@ class System:
         return alpha[0]
 
     def calculate_born_radius_with_pure_VDW_integral_by_octants(
-            self, atom_index: int, scale=None, chunk_size=1000000
-        ) -> list:
+        self, atom_index: int, scale=None, chunk_size=1000000
+    ) -> list:
         """
         Calculate the Born radius using pure VDW integral, returning one radius for each octant.
         This is an optimized version to improve speed and memory efficiency.
@@ -599,79 +602,80 @@ class System:
         self.check()
         if not scale:
             scale = self.get_scale()
-    
+
         center = np.array(self.positions[atom_index])
-    
+
         # Get the diameter of the sphere in which to integrate
         D = np.max(np.linalg.norm(np.array(self.positions) - center, axis=1)) + max(
             self.radii
         )
-    
+
         # Create ranges for grid points
         grid_range = np.arange(-D, D, 1 / scale)
         grid_points = np.stack(
             np.meshgrid(grid_range, grid_range, grid_range), -1
         ).reshape(-1, 3)
-    
+
         # Pre-calculate radii squares for quick checks
         radii_squared = np.array(self.radii) ** 2
-    
+
         # Initialize accumulators for each octant
         integrals = np.zeros(8)
         num_points_in_sphere = np.zeros(8)
-    
+
         def chunk_generator():
             for start in range(0, grid_points.shape[0], chunk_size):
                 end = min(start + chunk_size, grid_points.shape[0])
                 chunk = grid_points[start:end]
                 distances = np.linalg.norm(chunk, axis=1)
-    
+
                 # Mask for points within the spherical shell (excluding inside atom)
                 mask = (self.radii[atom_index] < distances) & (distances < D)
                 yield chunk[mask] + center, distances[mask]
-    
+
         def get_octant_index(point):
-            """ Determine which octant a point belongs to based on its (x, y, z) coordinates. """
+            """Determine which octant a point belongs to based on its (x, y, z) coordinates."""
             return (
-                (point[0] >= center[0]) << 2 |
-                (point[1] >= center[1]) << 1 |
-                (point[2] >= center[2])
+                (point[0] >= center[0]) << 2
+                | (point[1] >= center[1]) << 1
+                | (point[2] >= center[2])
             )
-    
+
         for points, distances_from_center in chunk_generator():
             # Determine which points are in solvent
             in_solvent_mask = np.ones(len(points), dtype=bool)
-    
+
             for i, position in enumerate(self.positions):
                 distance_to_position = np.linalg.norm(points - position, axis=1)
                 in_solvent_mask &= distance_to_position >= self.radii[i]
-    
+
             # Filter points that are in solvent
             solvent_points = points[in_solvent_mask]
             solvent_distances = distances_from_center[in_solvent_mask]
-    
+
             if len(solvent_points) > 0:
                 # Compute integrals for each octant
                 for i, point in enumerate(solvent_points):
                     octant_index = get_octant_index(point)
-                    integrals[octant_index] += 1 / solvent_distances[i]**4
+                    integrals[octant_index] += 1 / solvent_distances[i] ** 4
                     num_points_in_sphere[octant_index] += 1
-    
+
         # Normalize integrals and calculate alpha for each octant
         octant_alphas = []
         for octant in range(8):
             if num_points_in_sphere[octant] > 0:
                 integrals[octant] /= 4 * np.pi
                 # Calculate the volume of the sphere for the octant
-                volume = (4 / 3) * np.pi * (D**3 - self.radii[atom_index]**3)  # We're suggesting that the entire sphere is made up of eight clones of this octant, so we don't divide by 8 in the volume calculation
+                volume = (
+                    (4 / 3) * np.pi * (D**3 - self.radii[atom_index] ** 3)
+                )  # We're suggesting that the entire sphere is made up of eight clones of this octant, so we don't divide by 8 in the volume calculation
                 # Calculate alpha (Born radius) for the octant
                 alpha = 1 / (integrals[octant] * volume / num_points_in_sphere[octant])
-                octant_alphas.append(alpha[0])
+                octant_alphas.append(alpha)
             else:
-                octant_alphas.append(float('inf'))  # Handle empty octants
-    
-        return octant_alphas
+                octant_alphas.append(float("inf"))  # Handle empty octants
 
+        return octant_alphas
 
     def create_networkx_graph(self, delete_existing=False):
         """
@@ -731,9 +735,9 @@ if __name__ == "__main__":
     # system.set_charges(charges)
     # system.set_positions(positions)
 
-    # interaction_indices = (0, 1)
-    # result_potential = system.calculate_interatomic_potential(interaction_indices)
-    # BR_pb = system.calculate_born_radius_with_pb(atom_index=0)
+    interaction_indices = (0, 1)
+    result_potential = system.calculate_interatomic_potential(interaction_indices)
+    BR_pb = system.calculate_born_radius_with_pb(atom_index=0)
     BR_pure_VDW = system.calculate_born_radius_with_pure_VDW_integral(atom_index=0)
 
     # BR_pure_VDW_hemisphere = (
@@ -746,8 +750,8 @@ if __name__ == "__main__":
     )
 
     system.values = {
-        # "interaction_potential": (interaction_indices, result_potential),
-        # "BR_pb": BR_pb,
+        "interaction_potential": (interaction_indices, result_potential),
+        "BR_pb": BR_pb,
         "BR_pure_VDW": BR_pure_VDW,
         "BR_pure_VDW_by_octants": BR_pure_VDW_by_octants,
     }

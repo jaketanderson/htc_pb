@@ -18,13 +18,13 @@ output        = worker_logs/$(Process)/out.txt
 requirements   = (Arch == "X86_64" && Microarch >= "x86_64-v2" && GLIDEIN_ResourceName =!= "MTState-Tempest")
 
 request_cpus   = 1
-request_memory = 28GB
+request_memory = 30GB
 request_disk   = 16GB
 
 periodic_release = True
 max_retries = 30
 
-max_materialize = 10000
-max_idle = 5000
+max_materialize = 15000
+max_idle = 2500
 
 queue 12587

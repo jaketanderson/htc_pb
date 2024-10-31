@@ -1,8 +1,8 @@
 """
 graph/prepare.py
 
-This file generates `N` systems each with `n` atoms.
-Each system has one central atom with a randomly-populated
+This file generates Systems.
+Each System has one central atom with a randomly-populated
 environment surrounding it.
 """
 
@@ -16,9 +16,9 @@ from tqdm import tqdm
 
 from worker import System
 
-rng = np.random.default_rng(seed=1997)  # Use this for first batch of 20x500
+rng = np.random.default_rng(seed=1997)
 
-max_atom_count = 3
+max_atom_count = 20
 n_systems_per_atom_count = {}
 
 for atom_count in range(2, max_atom_count + 1):
@@ -55,7 +55,7 @@ def generate_systems(atom_count, n_systems, seed=None):
     distance_ranges = [(0, 0)] + [(max(r[1] for r in radii_ranges), 8)] * (
         atom_count - 1
     )
-    theta_ranges = [(0, 0)] * 2 + [(0, np.pi)] * (atom_count - 2)
+    theta_ranges = [(0, 0)] + [(0, np.pi)] * (atom_count - 1)
     phi_ranges = [(0, 2 * np.pi)] * atom_count
 
     attempts, successful_attempts = 0, 0
@@ -102,7 +102,7 @@ if __name__ == "__main__":
     # Pre-generate unique seeds for each atom count
     seeds = {atom_count: 1997 + atom_count for atom_count in range(2, max_atom_count + 1)}
 
-    with ProcessPoolExecutor(max_workers=4) as executor:
+    with ProcessPoolExecutor(max_workers=24) as executor:
         futures = []
         base_index = 0
         for atom_count in range(2, max_atom_count + 1):
