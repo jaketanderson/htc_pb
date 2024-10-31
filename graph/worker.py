@@ -288,6 +288,9 @@ class System:
         more accurate but more time/memory hungry calculations. Scales cubically!
         """
         
+        # While we do these larger grids, ensure the grid scale is 10
+        return 10
+
         if self.radii is None:
             raise ValueError(
                 "At least one radius must be defined to use self.get_scale()"

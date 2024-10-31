@@ -18,13 +18,14 @@ from worker import System
 
 rng = np.random.default_rng(seed=1997)
 
-max_atom_count = 20
+max_atom_count = 10
 n_systems_per_atom_count = {}
 
 for atom_count in range(2, max_atom_count + 1):
     # f(x) = 3861.13*exp(-0.2173x)
     # Chosen so that f(2)=2500 and f(20)=50
-    n_systems_per_atom_count[atom_count] = int(3861.13*np.exp(-0.2173*atom_count))
+    # n_systems_per_atom_count[atom_count] = int(3861.13*np.exp(-0.2173*atom_count))
+    n_systems_per_atom_count[atom_count] = int(889.14*np.exp(-0.2878*atom_count))
 
 total_count = sum(n_systems_per_atom_count.values())
 
@@ -52,8 +53,8 @@ def generate_systems(atom_count, n_systems, seed=None):
     inputs = []
     radii_ranges = [(0.8, 2.0)] * atom_count
     charge_ranges = [(-2, 2)] + [(0, 0)] * (atom_count - 1)
-    distance_ranges = [(0, 0)] + [(max(r[1] for r in radii_ranges), 8)] * (
-        atom_count - 1
+    distance_ranges = [(0, 0)] + [(8, 30)] + [(max(r[1] for r in radii_ranges), 8)] * (
+        atom_count - 2
     )
     theta_ranges = [(0, 0)] + [(0, np.pi)] * (atom_count - 1)
     phi_ranges = [(0, 2 * np.pi)] * atom_count
