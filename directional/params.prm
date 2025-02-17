@@ -1,0 +1,22 @@
+scale=%%SCALE%%
+perfil=80.0
+acenter(%%CENTER%%)
+!gs=400
+lp=f
+in(pdb,file="working_data/custom.%%ID%%.pdb")
+in(frc,file="working_data/custom.%%ID%%.pdb")
+in(siz,file="working_data/custom.%%ID%%.siz")
+in(crg,file="working_data/custom.%%ID%%.crg")
+indi=%%INDI%%
+exdi=%%EXDI%%
+prbrad=1.4
+salt=0.00
+bndcon=2
+maxc=0.00000001
+linit=10000
+!nonit=1000
+!out(phi,file="working_data/phimap.%%ID%%.cube", format=cube)
+site(atom, potential, coulomb, coordinates)
+out(frc,file="working_data/potentials.%%ID%%.frc")
+energy(s,c,g)
+!energy(s,c,g)
