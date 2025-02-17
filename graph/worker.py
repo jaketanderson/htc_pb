@@ -287,7 +287,7 @@ class System:
         Return the DelPhi `scale` parameter that should be used. Higher values make for
         more accurate but more time/memory hungry calculations. Scales cubically!
         """
-        
+
         # While we do these larger grids, ensure the grid scale is 10
         return 10
 
@@ -741,22 +741,26 @@ if __name__ == "__main__":
     interaction_indices = (0, 1)
     result_potential = system.calculate_interatomic_potential(interaction_indices)
     BR_pb = system.calculate_born_radius_with_pb(atom_index=0)
-    BR_pure_VDW = system.calculate_born_radius_with_pure_VDW_integral(atom_index=0)
+    BR_pure_VDW1 = system.calculate_born_radius_with_pure_VDW_integral(atom_index=0)
+    BR_pure_VDW2 = system.calculate_born_radius_with_pure_VDW_integral(atom_index=1)
 
     # BR_pure_VDW_hemisphere = (
     #     system.calculate_born_radius_with_pure_VDW_integral_hemisphere(
     #         atom_indices=interaction_indices
     #     )
     # )
-    BR_pure_VDW_by_octants = (
+    BR_pure_VDW_by_octants1 = (
         system.calculate_born_radius_with_pure_VDW_integral_by_octants(atom_index=0)
+    )
+    BR_pure_VDW_by_octants2 = (
+        system.calculate_born_radius_with_pure_VDW_integral_by_octants(atom_index=1)
     )
 
     system.values = {
         "interaction_potential": (interaction_indices, result_potential),
-        "BR_pb": BR_pb,
-        "BR_pure_VDW": BR_pure_VDW,
-        "BR_pure_VDW_by_octants": BR_pure_VDW_by_octants,
+        "BR_pb": (BR_pb, None),
+        "BR_pure_VDW": (BR_pure_VDW1, BR_pure_VDW2),
+        "BR_pure_VDW_by_octants": (BR_pure_VDW_by_octants1, BR_pure_VDW_by_octants2),
     }
 
     with open("result.pickle", "wb+") as f:

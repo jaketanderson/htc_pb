@@ -18,7 +18,7 @@ from worker import System
 
 rng = np.random.default_rng(seed=1997)
 
-max_atom_count = 10
+max_atom_count = 20
 n_systems_per_atom_count = {}
 
 for atom_count in range(2, max_atom_count + 1):
@@ -51,9 +51,9 @@ def generate_systems(atom_count, n_systems, seed=None):
     rng = np.random.default_rng(seed)  # Use a different RNG per task
 
     inputs = []
-    radii_ranges = [(0.8, 2.0)] * atom_count
+    radii_ranges = [(0.8, 3.0)] * atom_count
     charge_ranges = [(-2, 2)] + [(0, 0)] * (atom_count - 1)
-    distance_ranges = [(0, 0)] + [(8, 30)] + [(max(r[1] for r in radii_ranges), 8)] * (
+    distance_ranges = [(0, 0)] + [(10, 30)] + [(max(r[1] for r in radii_ranges), 10)] * (
         atom_count - 2
     )
     theta_ranges = [(0, 0)] + [(0, np.pi)] * (atom_count - 1)
