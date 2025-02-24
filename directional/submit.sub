@@ -25,6 +25,6 @@ periodic_release = True
 max_retries = 30
 
 max_materialize = 15000
-max_idle = 2500
+max_idle = 15000
 
-queue 1981
+queue 12587

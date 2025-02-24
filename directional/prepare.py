@@ -39,7 +39,7 @@ def check_overlap(xs, ys, zs, rs):
     for (i, j) in combinations(indices, 2):
         v1 = np.array([xs[i], ys[i], zs[i]])
         v2 = np.array([xs[j], ys[j], zs[j]])
-        if np.linalg.norm(v1 - v2) < (rs[i] + rs[j]):
+        if np.linalg.norm(v1 - v2) < (rs[i] + rs[j]) + 0.01:
             return True
     return False
 
