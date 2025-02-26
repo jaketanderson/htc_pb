@@ -39,7 +39,7 @@ def check_overlap(xs, ys, zs, rs):
     for (i, j) in combinations(indices, 2):
         v1 = np.array([xs[i], ys[i], zs[i]])
         v2 = np.array([xs[j], ys[j], zs[j]])
-        if np.linalg.norm(v1 - v2) < (rs[i] + rs[j]) + 0.01:
+        if np.linalg.norm(v1 - v2) < (rs[i] + rs[j]):
             return True
     return False
 
@@ -52,7 +52,7 @@ def generate_systems(atom_count, n_systems, seed=None):
 
     inputs = []
     radii_ranges = [(0.8, 2.5)] * atom_count
-    charge_ranges = [(-2, 2)] + [(0, 0)] * (atom_count - 1)
+    charge_ranges = [(-3, 3)] + [(0, 0)] * (atom_count - 1)
     distance_ranges = [(0, 0)] + [(10, 30)] + [(max(r[1] for r in radii_ranges), 10)] * (
         atom_count - 2
     )
