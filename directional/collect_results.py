@@ -1,6 +1,8 @@
 import os
 import pickle
 
+import numpy
+
 from prepare import total_count
 from worker import System
 
@@ -10,6 +12,7 @@ for i in range(0, total_count):
         with open(f"results/{i}/result.pickle", "rb") as f:
             results.append(pickle.load(f))
     except:
+        results.append(np.nan)
         print(f"Process {i} has failed to run (results file does not exist)")
 
 print(
